@@ -17,7 +17,7 @@ def vehicles_inline(vehicles: List[Tuple[int, str]]):
 
 def vehicle_actions(vehicle_id: int):
     rows = [
-        [InlineKeyboardButton("Aggiorna km", callback_data=f"vehkm:{vehicle_id}")],
+        [InlineKeyboardButton("Aggiorna i Chilometri", callback_data=f"vehkm:{vehicle_id}")],
         [InlineKeyboardButton("Storico interventi", callback_data=f"vehhist:{vehicle_id}")],
         [InlineKeyboardButton("Elimina veicolo", callback_data=f"vehdel:{vehicle_id}")]
     ]
