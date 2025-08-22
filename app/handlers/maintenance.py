@@ -64,12 +64,16 @@ async def add_maintenance_date(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data["m_custom_type"] = True
         return ASK_TYPE
     context.user_data["m_type"] = mtype
-    await query.edit_message_text(f"Data dell'intervento? (formato YYYY-MM-DD o DD/MM/YYYY, default {date.today().isoformat()})")
+    await query.edit_message_text(
+    f"📅 Inserisci la data dell'intervento.\n"
+    f"Esempio: *2025-08-22* oppure *22/08/2025* oppure *oggi* oppure *ieri*\n",parse_mode="Markdown")
     return ASK_DATE
 
 async def add_maintenance_type_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["m_type"] = update.message.text.strip()
-    await update.message.reply_text(f"Data dell'intervento? (formato YYYY-MM-DD o DD/MM/YYYY, default {date.today().isoformat()})")
+    await update.message.reply_text(
+    f"📅 Inserisci la data dell'intervento.\n"
+    f"Esempio: *2025-08-22* oppure *22/08/2025* oppure *oggi* oppure *ieri*\n",parse_mode="Markdown")
     return ASK_DATE
 
 async def add_maintenance_km(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,7 +83,9 @@ async def add_maintenance_km(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         d_iso = parse_date(d)
         if not d_iso:
-            await update.message.reply_text("Formato data non valido. Riprova (YYYY-MM-DD o DD/MM/YYYY):")
+            await update.message.reply_text(
+            f"📅 Formato data non valido. Riprova\n"
+            f"Esempio: *2025-08-22* oppure *22/08/2025* oppure *oggi* oppure *ieri*\n",parse_mode="Markdown")
             return ASK_DATE
     context.user_data["m_date"] = d_iso
     await update.message.reply_text("Km al momento dell'intervento? (oppure '-' per saltare)")
