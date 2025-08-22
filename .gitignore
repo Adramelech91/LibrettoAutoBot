@@ -1,0 +1,12 @@
+librettoauto/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data/*.db
+.env
+bot-data.pickle
+export.*
+.DS_Store
+Thumbs.db
