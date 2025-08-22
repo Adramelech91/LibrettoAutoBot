@@ -3,17 +3,19 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler,
                           ConversationHandler, filters)
 from app import storage
-from app.keyboards import main_menu, vehicles_inline, vehicle_actions
+from app.keyboards import main_menu, vehicles_inline, vehicle_actions, cancel
 from app.utils.formatting import clean_plate
 
 ASK_ALIAS, ASK_PLATE, ASK_BRAND, ASK_MODEL, ASK_YEAR, ASK_NOTES = range(6)
 ASK_KM_VEHICLE, ASK_KM_VALUE = range(6,8)
 
+# Gestione Veicoli (Lista)
 async def list_vehicles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     vehicles = storage.list_vehicles(context.bot_data["db_path"], chat_id)
     if not vehicles:
-        await update.message.reply_text("Nessun veicolo ancora. Usa /add_vehicle per aggiungerne uno.", reply_markup=main_menu())
+        buttons = [[InlineKeyboardButton("🚗 Aggiungi Veicolo", callback_data=f"add_vehicle")]]
+        await update.message.reply_text("Nessun veicolo ancora. Prima aggiungi un veicolo", reply_markup=InlineKeyboardMarkup(buttons))
         return
     items = [(v["id"], v["alias"] or f"{v['brand']} {v['model']}".strip() or v["plate"] or f"Veicolo #{v['id']}") for v in vehicles]
     await update.message.reply_text("I tuoi veicoli:", reply_markup=vehicles_inline(items))
@@ -31,9 +33,9 @@ async def on_vehicle_pressed(update: Update, context: ContextTypes.DEFAULT_TYPE)
     txt += f"Anno: {v['year'] or '-'}\nKm attuali: {v['km_current']}"
     await query.edit_message_text(txt, reply_markup=vehicle_actions(vid), parse_mode="Markdown")
 
-# Add vehicle flow
+# Gestione Veicoli (Aggiunta)
 async def add_vehicle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ok! Come vuoi chiamare il veicolo? (alias, es. 'Panda Bianca')")
+    await context.bot.send_message(chat_id=update.effective_chat.id,text="Ok! Come vuoi chiamare il veicolo? (alias, es. 'Panda Bianca')")
     return ASK_ALIAS
 
 async def ask_plate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,15 +80,16 @@ async def add_vehicle_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         notes=context.user_data.get("notes"),
     )
     context.user_data.clear()
-    await update.message.reply_text(f"Veicolo aggiunto ✅ (ID {vid}).", reply_markup=main_menu())
+    await update.message.reply_text(f"Veicolo aggiunto ✅", reply_markup=main_menu())
     return ConversationHandler.END
 
-# Update KM flow
+# Gestione Veicoli (Aggiorna Chilometraggio)
 async def update_km_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     vehicles = storage.list_vehicles(context.bot_data["db_path"], chat_id)
     if not vehicles:
-        await update.message.reply_text("Prima aggiungi un veicolo con /add_vehicle.")
+        buttons = [[InlineKeyboardButton("🚗 Aggiungi Veicolo", callback_data=f"add_vehicle")]]
+        await update.message.reply_text("Nessun veicolo ancora. Prima aggiungi un veicolo", reply_markup=InlineKeyboardMarkup(buttons))
         return ConversationHandler.END
     context.user_data["km_choose_map"] = {str(v["id"]): v for v in vehicles}
     buttons = [[InlineKeyboardButton((v["alias"] or v["brand"] or '') + ' ' + (v["model"] or ''), callback_data=f"kmv:{v['id']}")] for v in vehicles]
@@ -121,6 +124,7 @@ async def update_km_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Chilometraggio aggiornato ✅")
     return ConversationHandler.END
 
+# Gestione Veicoli (Elimina Veicolo)
 async def delete_vehicle_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -128,10 +132,13 @@ async def delete_vehicle_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     storage.delete_vehicle(context.bot_data["db_path"], vid)
     await query.edit_message_text("Veicolo eliminato ✅")
 
+# Gestione Handlers
 def get_handlers():
+    # Conversazione veicolo: entra bottone "add_vehicle"
     conv_add = ConversationHandler(
-        entry_points=[CommandHandler("add_vehicle", add_vehicle_start),
-                      MessageHandler(filters.Regex("^🚗 Veicoli$"), list_vehicles)],
+        entry_points=[
+            CallbackQueryHandler(add_vehicle_start, pattern=r"^add_vehicle$"),
+        ],
         states={
             ASK_ALIAS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_plate)],
             ASK_PLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_brand)],
@@ -143,22 +150,35 @@ def get_handlers():
         fallbacks=[],
         name="add_vehicle_conv",
         persistent=True,
+        # per_message=True,  # opzionale per silenziare warning PTB
     )
+
+    # Conversazione KM: entra con /update_km o bottone vehkm:<id>
     conv_km = ConversationHandler(
-        entry_points=[CommandHandler("update_km", update_km_start),
-                      CallbackQueryHandler(update_km_from_vehicle, pattern="^vehkm:")],
+        entry_points=[
+            CommandHandler("update_km", update_km_start),
+            CallbackQueryHandler(update_km_from_vehicle, pattern=r"^vehkm:\d+$"),
+        ],
         states={
-            ASK_KM_VEHICLE: [CallbackQueryHandler(update_km_choose, pattern="^kmv:")],
-            ASK_KM_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_km_save)]
+            ASK_KM_VEHICLE: [CallbackQueryHandler(update_km_choose, pattern=r"^kmv:\d+$")],
+            ASK_KM_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_km_save)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("cancel", cancel)],
         name="update_km_conv",
         persistent=True,
+        # per_message=True,  # opzionale
     )
+
     return [
+        # Lista veicoli: handler STANDALONE (NON in conv_add)
         CommandHandler("vehicles", list_vehicles),
-        CallbackQueryHandler(on_vehicle_pressed, pattern="^veh:"),
-        CallbackQueryHandler(delete_vehicle_cb, pattern="^vehdel:"),
+        MessageHandler(filters.Regex("^🚗 Veicoli$"), list_vehicles),
+
+        # Callback generici sul veicolo (pattern stretti, niente overlap)
+        CallbackQueryHandler(on_vehicle_pressed, pattern=r"^veh:\d+$"),
+        CallbackQueryHandler(delete_vehicle_cb, pattern=r"^vehdel:\d+$"),
+
+        # Conversazioni
         conv_add,
         conv_km,
     ]

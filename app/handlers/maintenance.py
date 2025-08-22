@@ -4,26 +4,53 @@ from telegram.ext import (ContextTypes, CommandHandler, MessageHandler, Callback
                           ConversationHandler, filters)
 from app import storage
 from app.utils.formatting import parse_date
+from app.keyboards import cancel
 from datetime import date
+
 
 ASK_VEH, ASK_TYPE, ASK_DATE, ASK_KM, ASK_NOTES, ASK_COST = range(6)
 
-COMMON_TYPES = ["Tagliando", "Cambio olio", "Filtro aria", "Filtro abitacolo", "Pneumatici", "Freni", "Batteria", "Altro"]
+# Gestione Tipologie Interventi
+DEFAULT_COMMON_TYPES = ["Tagliando", "Cambio olio", "Filtro aria", "Filtro abitacolo", "Pneumatici", "Freni", "Batteria", "Altro"]
+async def add_type_cmd(update, context):
+    if not context.args:
+        return await update.message.reply_text("Uso: /add_type <nome tipo>")
+    label = " ".join(context.args)
+    storage.add_type(context.bot_data["db_path"], update.effective_chat.id, label)
+    await update.message.reply_text(f"Aggiunto: {label} ✅")
 
+async def list_types_cmd(update, context):
+    types = storage.list_types(context.bot_data["db_path"], update.effective_chat.id) or DEFAULT_COMMON_TYPES
+    await update.message.reply_text("Tipi disponibili:\n" + "\n".join(f"• {t}" for t in types))
+
+async def del_type_cmd(update, context):
+    if not context.args:
+        return await update.message.reply_text("Uso: /del_type <nome tipo>")
+    label = " ".join(context.args)
+    ok = storage.delete_type(context.bot_data["db_path"], update.effective_chat.id, label)
+    await update.message.reply_text("Rimosso ✅" if ok else "Tipo non trovato.")
+
+# Gestione Manutenzioni (Inserimento)
 async def add_maintenance_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     vehicles = storage.list_vehicles(context.bot_data["db_path"], chat_id)
     if not vehicles:
-        await update.message.reply_text("Prima aggiungi un veicolo con /add_vehicle.")
+        buttons = [[InlineKeyboardButton("🚗 Aggiungi Veicolo", callback_data=f"add_vehicle")]]
+        await update.message.reply_text("Nessun veicolo ancora. Prima aggiungi un veicolo", reply_markup=InlineKeyboardMarkup(buttons))
         return ConversationHandler.END
     buttons = [[InlineKeyboardButton((v["alias"] or v["brand"] or '') + ' ' + (v["model"] or ''), callback_data=f"mv:{v['id']}")] for v in vehicles]
     await update.message.reply_text("Per quale veicolo?", reply_markup=InlineKeyboardMarkup(buttons))
     return ASK_VEH
 
 async def add_maintenance_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    types_from_db = storage.list_types(context.bot_data["db_path"], chat_id)
     query = update.callback_query
     await query.answer()
     context.user_data["m_vehicle_id"] = int(query.data.split(":")[1])
+    COMMON_TYPES = types_from_db if types_from_db else DEFAULT_COMMON_TYPES
+    if "Altro" not in COMMON_TYPES:
+        COMMON_TYPES = [*COMMON_TYPES, "Altro"]
     buttons = [[InlineKeyboardButton(t, callback_data=f"mt:{t}")] for t in COMMON_TYPES]
     await query.edit_message_text("Tipo di intervento?", reply_markup=InlineKeyboardMarkup(buttons))
     return ASK_TYPE
@@ -94,11 +121,13 @@ async def add_maintenance_save(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(f"Intervento registrato ✅ (ID {rec_id})")
     return ConversationHandler.END
 
+# Gestione Manutenzioni (Storico)
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     vehicles = storage.list_vehicles(context.bot_data["db_path"], chat_id)
     if not vehicles:
-        await update.message.reply_text("Prima aggiungi un veicolo con /add_vehicle.")
+        buttons = [[InlineKeyboardButton("🚗 Aggiungi Veicolo", callback_data=f"add_vehicle")]]
+        await update.message.reply_text("Nessun veicolo ancora. Prima aggiungi un veicolo", reply_markup=InlineKeyboardMarkup(buttons))
         return
     buttons = [[InlineKeyboardButton((v["alias"] or v["brand"] or '') + ' ' + (v["model"] or ''), callback_data=f"hv:{v['id']}")] for v in vehicles]
     await update.message.reply_text("Storico per quale veicolo?", reply_markup=InlineKeyboardMarkup(buttons))
@@ -143,6 +172,7 @@ async def history_show(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(line)
     await query.edit_message_text("\n".join(lines))
 
+# Gestione Handlers
 def get_handlers():
     conv_add = ConversationHandler(
         entry_points=[CommandHandler("add_maintenance", add_maintenance_start)],
@@ -157,7 +187,7 @@ def get_handlers():
             ASK_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_maintenance_cost)],
             ASK_COST: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_maintenance_save)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("cancel", cancel)],
         name="add_maint_conv",
         persistent=True,
     )
@@ -165,5 +195,9 @@ def get_handlers():
         conv_add,
         CommandHandler("history", history),
         CallbackQueryHandler(history_show_from_vehicle, pattern="^vehhist:"),
-        CallbackQueryHandler(history_show, pattern="^hv:")
+        CallbackQueryHandler(history_show, pattern="^hv:"),
+        CommandHandler("add_type", add_type_cmd),
+        CommandHandler("list_types", list_types_cmd),
+        CommandHandler("del_type", del_type_cmd),
     ]
+

@@ -5,6 +5,7 @@ from telegram.ext import (ContextTypes, CommandHandler, MessageHandler, Callback
 from app import storage
 from app.utils.formatting import parse_datetime
 from datetime import datetime, timedelta
+from app.keyboards import cancel
 import pytz
 
 ASK_VEH_TIME, ASK_DT, ASK_DESC = range(3)
@@ -146,7 +147,7 @@ def get_handlers():
             ASK_KM: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_km_reminder_desc)],
             ASK_DESC_KM: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_km_reminder_save)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("cancel", cancel)],
         name="set_km_reminder_conv",
         persistent=True,
     )

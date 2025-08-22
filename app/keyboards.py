@@ -1,6 +1,18 @@
 
 from telegram import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from typing import List, Tuple
+from telegram import Update, ReplyKeyboardRemove
+from telegram.ext import ContextTypes, ConversationHandler
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Interrompe qualunque conversazione."""
+    await update.message.reply_text(
+        "❌ Operazione annullata.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    # Ritorna END per chiudere la conversation
+    return ConversationHandler.END
+
 
 MAIN_BTNS = [
     [KeyboardButton("🚗 Veicoli"), KeyboardButton("🛠️ Manutenzione")],

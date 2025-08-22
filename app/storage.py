@@ -60,6 +60,16 @@ SCHEMA = [
         created_at TEXT NOT NULL,
         FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
     );
+    ''',
+    '''
+    CREATE TABLE IF NOT EXISTS maintenance_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(user_id, label),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     '''
 ]
 
@@ -145,6 +155,48 @@ def list_maintenance(db_path: str, vehicle_id: int, limit: int = 50) -> List[sql
         cur = conn.cursor()
         cur.execute("SELECT * FROM maintenance WHERE vehicle_id = ? ORDER BY date DESC, id DESC LIMIT ?", (vehicle_id, limit))
         return cur.fetchall()
+
+def list_types(db_path: str, chat_id: int) -> list[str]:
+    conn = _connect(db_path)
+    with closing(conn):
+        user_id = ensure_user(conn, chat_id)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT label FROM maintenance_types WHERE user_id = ? ORDER BY label",
+            (user_id,),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            # fallback iniziale: i tuoi default
+            return ["Tagliando", "Cambio olio", "Filtro aria", "Filtro abitacolo", "Pneumatici", "Freni", "Batteria", "Altro"]
+        return [r["label"] for r in rows]
+
+def add_type(db_path: str, chat_id: int, label: str) -> None:
+    label = label.strip()
+    if not label:
+        return
+    conn = _connect(db_path)
+    with closing(conn):
+        user_id = ensure_user(conn, chat_id)
+        now = datetime.utcnow().isoformat()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO maintenance_types (user_id, label, created_at) VALUES (?,?,?)",
+            (user_id, label, now),
+        )
+        conn.commit()
+
+def delete_type(db_path: str, chat_id: int, label: str) -> bool:
+    conn = _connect(db_path)
+    with closing(conn):
+        user_id = ensure_user(conn, chat_id)
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM maintenance_types WHERE user_id = ? AND label = ?",
+            (user_id, label.strip()),
+        )
+        conn.commit()
+        return cur.rowcount > 0
 
 # Reminders
 def add_time_reminder(db_path: str, vehicle_id: int, due_at_iso: str, description: str) -> int:
