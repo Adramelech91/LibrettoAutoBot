@@ -161,7 +161,6 @@ def get_handlers():
         name="add_maint_conv",
         persistent=True,
     )
-    
     return [
         conv_add,
         CommandHandler("history", history),
